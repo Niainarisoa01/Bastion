@@ -14,3 +14,5 @@ dashmap = { workspace = true }
 bastion-config = { workspace = true }
 bastion-metrics = { workspace = true }
 bastion-core = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+serde_json.workspace = true

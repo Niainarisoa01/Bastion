@@ -46,27 +46,45 @@ pub async fn start_telegram_bot(token: String, ctx: BotContext) {
         start_alert_engine(alert_bot, alert_ctx).await;
     });
 
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::AUTHORIZATION,
+        reqwest::header::HeaderValue::from_static("Bearer bastion-admin-secret"),
+    );
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .default_headers(headers)
+        .build()
+        .unwrap();
+
     Command::repl(bot, move |bot: Bot, msg: Message, cmd: Command| {
         let ctx = ctx.clone();
+        let client = client.clone();
         async move {
-            // Check auth (allow if admin_chat_ids is empty for testing, or matching)
             let chat_id = msg.chat.id.0;
             if !ctx.admin_chat_ids.is_empty() && !ctx.admin_chat_ids.contains(&chat_id) {
                 let _ = bot.send_message(msg.chat.id, "⛔ Accès non autorisé.").await;
                 return respond(());
             }
 
+            use teloxide::types::{KeyboardMarkup, KeyboardButton};
+            let keyboard = KeyboardMarkup::new(vec![
+                vec![KeyboardButton::new("/status"), KeyboardButton::new("/stats"), KeyboardButton::new("/toproutes")],
+                vec![KeyboardButton::new("/backends"), KeyboardButton::new("/health"), KeyboardButton::new("/reload")],
+                vec![KeyboardButton::new("/cachestats"), KeyboardButton::new("/cacheclear"), KeyboardButton::new("/help")],
+            ]).resize_keyboard();
+
             match cmd {
                 Command::Help => {
-                    bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?;
+                    bot.send_message(msg.chat.id, Command::descriptions().to_string())
+                        .reply_markup(keyboard).await?;
                 }
                 Command::Status => {
                     let reqs = ctx.metrics.total_requests.load(std::sync::atomic::Ordering::Relaxed);
                     let errs = ctx.metrics.total_errors.load(std::sync::atomic::Ordering::Relaxed);
-                    // Calcul du succès en gérant le compteur sous Flow asynchrone
                     let success = reqs.saturating_sub(errs);
                     let msg_text = format!("🛡️ *BASTION STATUS* 🛡️\n\n📈 *Requêtes Totales*: {}\n🟢 *Succès*: {}\n🔴 *Erreurs*: {}", reqs, success, errs);
-                    bot.send_message(msg.chat.id, msg_text).parse_mode(teloxide::types::ParseMode::MarkdownV2).await?;
+                    bot.send_message(msg.chat.id, msg_text).parse_mode(teloxide::types::ParseMode::MarkdownV2).reply_markup(keyboard).await?;
                 }
                 Command::Stats => {
                     let (p50, p95, p99) = {
@@ -74,37 +92,65 @@ pub async fn start_telegram_bot(token: String, ctx: BotContext) {
                         (hist.value_at_quantile(0.50), hist.value_at_quantile(0.95), hist.value_at_quantile(0.99))
                     };
                     let reqs = ctx.metrics.total_requests.load(std::sync::atomic::Ordering::Relaxed);
-                    
                     let msg_text = format!("📊 *BASTION STATS*\n\n📈 *Requests*: {}\n⏱️ *P50 Latency*: {} µs\n⏱️ *P95 Latency*: {} µs\n⏱️ *P99 Latency*: {} µs", reqs, p50, p95, p99);
-                    bot.send_message(msg.chat.id, msg_text).parse_mode(teloxide::types::ParseMode::MarkdownV2).await?;
+                    bot.send_message(msg.chat.id, msg_text).parse_mode(teloxide::types::ParseMode::MarkdownV2).reply_markup(keyboard).await?;
                 }
                 Command::Backends => {
                     let mut lines = Vec::new();
                     for entry in ctx.metrics.backends.iter() {
                         let bk = entry.key().replace(".", "\\.").replace("-", "\\-");
-                        lines.push(format!("🔌 `{}`: {} reqs", bk, entry.value().total_requests.load(std::sync::atomic::Ordering::Relaxed)));
+                        let reqs = entry.value().total_requests.load(std::sync::atomic::Ordering::Relaxed);
+                        let errs = entry.value().total_errors.load(std::sync::atomic::Ordering::Relaxed);
+                        lines.push(format!("🔌 `{}`: {} reqs \\({} errs\\)", bk, reqs, errs));
                     }
-                    let out = if lines.is_empty() { "Aucun backend actif\\.".to_string() } else { lines.join("\n") };
-                    let msg_text = format!("*BACKENDS*\n{}", out);
-                    bot.send_message(msg.chat.id, msg_text).parse_mode(teloxide::types::ParseMode::MarkdownV2).await?;
+                    if lines.is_empty() { lines.push("Aucun backend actif\\.".to_string()); }
+                    let msg_text = format!("*BACKENDS*\n{}", lines.join("\n"));
+                    bot.send_message(msg.chat.id, msg_text).parse_mode(teloxide::types::ParseMode::MarkdownV2).reply_markup(keyboard).await?;
                 }
                 Command::Health(name) => {
-                    bot.send_message(msg.chat.id, format!("Implémentation ciblée: {}", name)).await?;
+                    if name.is_empty() {
+                        match client.get("http://127.0.0.1:8081/admin/health").send().await {
+                            Ok(res) => {
+                                let body = res.text().await.unwrap_or_default().replace(".", "\\.").replace("-", "\\-");
+                                bot.send_message(msg.chat.id, format!("🩺 *SANTÉ GLOBALE*\n\n```json\n{}\n```", body)).parse_mode(teloxide::types::ParseMode::MarkdownV2).reply_markup(keyboard).await?;
+                            }
+                            Err(_) => { bot.send_message(msg.chat.id, "🔴 Impossible de joindre l'Admin API.").reply_markup(keyboard).await?; }
+                        }
+                    } else {
+                        bot.send_message(msg.chat.id, format!("Recherche de la santé pour {}... (non implémenté isolément, utilisez /health pour tout voir)", name)).reply_markup(keyboard).await?;
+                    }
                 }
                 Command::TopRoutes => {
-                    bot.send_message(msg.chat.id, "Fonctionnalité en cours...").await?;
+                    let mut routes: Vec<_> = ctx.metrics.routes.iter()
+                        .map(|e| (e.key().clone(), e.value().total_requests.load(std::sync::atomic::Ordering::Relaxed)))
+                        .collect();
+                    routes.sort_by(|a, b| b.1.cmp(&a.1));
+                    let top: Vec<_> = routes.into_iter().take(10).map(|(r, v)| format!("🛤️ `{}`: {}", r.replace(".", "\\.").replace("-", "\\-"), v)).collect();
+                    let out = if top.is_empty() { "Aucune route.".to_string() } else { top.join("\n") };
+                    bot.send_message(msg.chat.id, format!("🏆 *TOP ROUTES*\n\n{}", out)).parse_mode(teloxide::types::ParseMode::MarkdownV2).reply_markup(keyboard).await?;
                 }
                 Command::Toggle(backend) => {
-                    bot.send_message(msg.chat.id, format!("🔄 Bascule du backend demandé: {}", backend)).await?;
+                    if backend.is_empty() {
+                        bot.send_message(msg.chat.id, "⚠️ Précisez un backend. Ex: /toggle http://127.0.0.1:8001").reply_markup(keyboard).await?;
+                    } else {
+                        let payload = serde_json::json!({ "url": backend, "drain": true });
+                        match client.put("http://127.0.0.1:8081/admin/upstreams/backend/health").json(&payload).send().await {
+                            Ok(_) => { bot.send_message(msg.chat.id, format!("🔄 Drain du backend {} demandé via API.", backend)).reply_markup(keyboard).await?; }
+                            Err(e) => { bot.send_message(msg.chat.id, format!("🔴 Échec du toggle: {}", e)).reply_markup(keyboard).await?; }
+                        }
+                    }
                 }
                 Command::Reload => {
-                    bot.send_message(msg.chat.id, "⚡ Rechargement forcé de la configuration \\(stub\\)").parse_mode(teloxide::types::ParseMode::MarkdownV2).await?;
+                    match client.post("http://127.0.0.1:8081/admin/config/reload").send().await {
+                        Ok(_) => { bot.send_message(msg.chat.id, "⚡ Configuration rechargée via hot-reload !").reply_markup(keyboard).await?; }
+                        Err(e) => { bot.send_message(msg.chat.id, format!("🔴 Échec du reload: {}", e)).reply_markup(keyboard).await?; }
+                    }
                 }
                 Command::CacheStats => {
-                    bot.send_message(msg.chat.id, "🧠 Cache Hits: XXX / Miss: YYY \\(stub\\)").parse_mode(teloxide::types::ParseMode::MarkdownV2).await?;
+                    bot.send_message(msg.chat.id, "🧠 Le cache Metrics n'est pas encore exposé via l'Admin API.").reply_markup(keyboard).await?;
                 }
                 Command::CacheClear => {
-                    bot.send_message(msg.chat.id, "🗑️ Cache purgé avec succès !").await?;
+                    bot.send_message(msg.chat.id, "🗑️ Le CacheClear global nécessite un endpoint Admin.").reply_markup(keyboard).await?;
                 }
             }
             respond(())
