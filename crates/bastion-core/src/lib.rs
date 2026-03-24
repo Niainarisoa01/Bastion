@@ -1,3 +1,4 @@
+pub mod error;
 pub mod proxy;
 pub mod router;
 pub mod middleware;
