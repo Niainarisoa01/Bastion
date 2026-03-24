@@ -1,9 +1,9 @@
 [package]
 name = "bastion-dashboard"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
 description = "Real-time web dashboard for Bastion Gateway"
 
 [dependencies]
