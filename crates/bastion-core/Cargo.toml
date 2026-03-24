@@ -1,0 +1,29 @@
+[package]
+name = "bastion-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Core proxy engine for Bastion Gateway"
+
+[dependencies]
+tokio = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+http-body-util = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+dashmap = { workspace = true }
+crossbeam = { workspace = true }
+smallvec = { workspace = true }
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
+bytes = { workspace = true }
+pin-project-lite = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+bastion-cache = { workspace = true }
+bastion-metrics = { workspace = true }
+bastion-config = { workspace = true }

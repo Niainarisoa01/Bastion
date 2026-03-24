@@ -1,0 +1,15 @@
+[package]
+name = "bastion-telegram"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Telegram bot for Bastion Gateway"
+
+[dependencies]
+teloxide = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+dashmap = { workspace = true }
+bastion-config = { workspace = true }
+bastion-metrics = { workspace = true }
