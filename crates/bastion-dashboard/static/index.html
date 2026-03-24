@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Bastion API Gateway — Dashboard de monitoring temps réel">
+    <title>Bastion Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .logo-icon .material-symbols-outlined { font-size: 32px; color: var(--accent-cyan); }
+        .nav-icon .material-symbols-outlined { font-size: 20px; }
+        .kpi-icon .material-symbols-outlined { font-size: 24px; }
+        .kpi-requests .kpi-icon .material-symbols-outlined { color: var(--accent-green); }
+        .kpi-latency .kpi-icon .material-symbols-outlined { color: var(--accent-blue); }
+        .kpi-errors .kpi-icon .material-symbols-outlined { color: var(--accent-red); }
+        .kpi-connections .kpi-icon .material-symbols-outlined { color: var(--accent-purple); }
+        .table-header h3 .material-symbols-outlined { margin-right: 8px; font-size: 22px; color: var(--text-primary); }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-logo">
+            <div class="logo-icon"><span class="material-symbols-outlined">shield</span></div>
+            <span class="logo-text">BASTION</span>
+        </div>
+        <ul class="nav-links">
+            <li><a href="#dashboard" class="nav-link active" data-page="dashboard">
+                <span class="nav-icon"><span class="material-symbols-outlined">dashboard</span></span><span class="nav-label">Dashboard</span>
+            </a></li>
+            <li><a href="#backends" class="nav-link" data-page="backends">
+                <span class="nav-icon"><span class="material-symbols-outlined">dns</span></span><span class="nav-label">Backends</span>
+            </a></li>
+            <li><a href="#routes" class="nav-link" data-page="routes">
+                <span class="nav-icon"><span class="material-symbols-outlined">route</span></span><span class="nav-label">Routes</span>
+            </a></li>
+            <li><a href="#alerts" class="nav-link" data-page="alerts">
+                <span class="nav-icon"><span class="material-symbols-outlined">notifications</span></span><span class="nav-label">Alertes</span>
+            </a></li>
+        </ul>
+        <div class="sidebar-footer">
+            <div class="ws-status" id="wsStatus">
+                <span class="ws-dot"></span>
+                <span class="ws-label">Déconnecté</span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Header -->
+        <header class="top-header">
+            <h1 class="page-title" id="pageTitle">Dashboard</h1>
+            <div class="header-right">
+                <span class="uptime" id="uptime">Uptime: --</span>
+                <span class="version-badge">v0.1.0</span>
+            </div>
+        </header>
+
+        <!-- Page: Dashboard -->
+        <section class="page" id="page-dashboard">
+            <!-- KPI Cards -->
+            <div class="kpi-grid">
+                <div class="kpi-card kpi-requests">
+                    <div class="kpi-header">
+                        <span class="kpi-icon"><span class="material-symbols-outlined">monitoring</span></span>
+                        <span class="kpi-label">Requêtes Totales</span>
+                    </div>
+                    <div class="kpi-value" id="kpiRequests">0</div>
+                    <div class="kpi-sub" id="kpiReqRate">0 req/s</div>
+                    <div class="kpi-bar"><div class="kpi-bar-fill kpi-bar-green" id="kpiReqBar"></div></div>
+                </div>
+                <div class="kpi-card kpi-latency">
+                    <div class="kpi-header">
+                        <span class="kpi-icon"><span class="material-symbols-outlined">timer</span></span>
+                        <span class="kpi-label">P99 Latency</span>
+                    </div>
+                    <div class="kpi-value" id="kpiLatency">0 <small>µs</small></div>
+                    <div class="kpi-sub">P50: <span id="kpiP50">0</span> · P95: <span id="kpiP95">0</span></div>
+                    <div class="kpi-bar"><div class="kpi-bar-fill kpi-bar-blue" id="kpiLatBar"></div></div>
+                </div>
+                <div class="kpi-card kpi-errors">
+                    <div class="kpi-header">
+                        <span class="kpi-icon"><span class="material-symbols-outlined">error</span></span>
+                        <span class="kpi-label">Erreurs (5xx)</span>
+                    </div>
+                    <div class="kpi-value" id="kpiErrors">0</div>
+                    <div class="kpi-sub">Taux: <span id="kpiErrRate">0%</span></div>
+                    <div class="kpi-bar"><div class="kpi-bar-fill kpi-bar-red" id="kpiErrBar"></div></div>
+                </div>
+                <div class="kpi-card kpi-connections">
+                    <div class="kpi-header">
+                        <span class="kpi-icon"><span class="material-symbols-outlined">cable</span></span>
+                        <span class="kpi-label">Connexions Actives</span>
+                    </div>
+                    <div class="kpi-value" id="kpiActive">0</div>
+                    <div class="kpi-sub">Backends: <span id="kpiBackendCount">0</span></div>
+                    <div class="kpi-bar"><div class="kpi-bar-fill kpi-bar-purple" id="kpiActBar"></div></div>
+                </div>
+            </div>
+
+            <!-- Charts -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>Request Rate</h3>
+                        <span class="chart-badge">Temps réel</span>
+                    </div>
+                    <div class="chart-body" id="chartRequests"></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>Latency Distribution</h3>
+                        <span class="chart-badge">P50 · P95 · P99</span>
+                    </div>
+                    <div class="chart-body" id="chartLatency"></div>
+                </div>
+            </div>
+
+            <!-- Quick Backends Table -->
+            <div class="table-card">
+                <div class="table-header">
+                    <h3>Backends</h3>
+                    <span class="table-count" id="backendCountBadge">0 actifs</span>
+                </div>
+                <table class="data-table" id="dashBackendsTable">
+                    <thead><tr>
+                        <th>URL</th><th>Status</th><th>Requêtes</th><th>Erreurs</th><th>P95 Latency</th>
+                    </tr></thead>
+                    <tbody id="dashBackendsBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Page: Backends -->
+        <section class="page hidden" id="page-backends">
+            <div class="table-card full">
+                <div class="table-header"><h3><span class="material-symbols-outlined">dns</span> Tous les Backends</h3></div>
+                <table class="data-table" id="backendsTable">
+                    <thead><tr>
+                        <th>URL</th><th>Status</th><th>Requêtes</th><th>Erreurs</th><th>Actives</th><th>P95 Latency</th>
+                    </tr></thead>
+                    <tbody id="backendsBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Page: Routes -->
+        <section class="page hidden" id="page-routes">
+            <div class="table-card full">
+                <div class="table-header"><h3><span class="material-symbols-outlined">route</span> Toutes les Routes</h3></div>
+                <table class="data-table" id="routesTable">
+                    <thead><tr>
+                        <th>Path</th><th>Requêtes</th><th>Erreurs</th><th>P95 Latency</th><th>Taux Erreur</th>
+                    </tr></thead>
+                    <tbody id="routesBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Page: Alerts -->
+        <section class="page hidden" id="page-alerts">
+            <div class="table-card full">
+                <div class="table-header"><h3><span class="material-symbols-outlined">notifications</span> Alertes Récentes</h3></div>
+                <div class="alerts-timeline" id="alertsTimeline">
+                    <div class="alert-empty"><span class="material-symbols-outlined" style="margin-right:8px;color:var(--accent-green)">check_circle</span> Aucune alerte détectée. Tout fonctionne normalement.</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.iife.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.min.css">
+    <script src="/js/app.js"></script>
+</body>
+</html>

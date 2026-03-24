@@ -6,7 +6,7 @@ members = [
     "crates/bastion-metrics",
     "crates/bastion-admin",
     "crates/bastion-telegram",
-    "crates/bastion-dashboard",
+    "crates/bastion-dashboard", "scripts/fast_backend",
 ]
 resolver = "2"
 

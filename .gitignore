@@ -1,8 +1,35 @@
+# =========================================================================
+# BASTION - .gitignore
+# =========================================================================
+
+# 🦀 Rust / Cargo Build Artifacts
 /target
+/crates/*/target
+/scripts/*/target
 /Cargo.lock
 **/*.rs.bk
 
-# Secrets
+# 🔐 Secrets & Configuration (NEVER COMMIT)
 config.local.toml
 .env
+secret*.key
+*.pem
+*.cert
+*.key
 
+# 📝 Logs & Temporary Files
+*.log
+*.tmp
+*.temp
+/tmp/
+
+# 🖥️ IDEs & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# 📦 Docker
+docker-compose.override.yml
+.docker/

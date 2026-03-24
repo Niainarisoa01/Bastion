@@ -181,16 +181,31 @@ async fn main() -> Result<()> {
         }
     });
 
-    if config.telegram.enabled && !config.telegram.token.is_empty() {
+    // Dashboard Web UI
+    let metrics_for_dash = metrics.clone();
+    tokio::spawn(async move {
+        if let Err(e) = bastion_dashboard::start_dashboard_server("127.0.0.1:8082".to_string(), metrics_for_dash).await {
+            tracing::error!("Dashboard server crashed: {}", e);
+        }
+    });
+
+    let token = config.telegram.token.clone();
+    let token_looks_valid = config.telegram.enabled
+        && !token.is_empty()
+        && token.contains(':')
+        && !token.contains("VOTRE_TOKEN");
+
+    if token_looks_valid {
         let tg_ctx = bastion_telegram::BotContext {
             metrics: metrics.clone(),
             router: shared_router.clone(),
             admin_chat_ids: config.telegram.admin_chat_ids.clone(),
         };
-        let token = config.telegram.token.clone();
         tokio::spawn(async move {
             bastion_telegram::start_telegram_bot(token, tg_ctx).await;
         });
+    } else {
+        tracing::warn!("Telegram bot disabled: token is missing or placeholder. Set a valid token in config.toml.");
     }
 
     // Await termination (Ctrl+C)

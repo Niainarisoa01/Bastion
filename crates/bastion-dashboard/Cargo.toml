@@ -10,5 +10,9 @@ description = "Real-time web dashboard for Bastion Gateway"
 axum = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+futures = { workspace = true }
+tower-http = { workspace = true }
 bastion-metrics = { workspace = true }
 bastion-config = { workspace = true }

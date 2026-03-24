@@ -1,0 +1,14 @@
+[workspace]
+
+[package]
+name = "bastion-stress"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "stress"
+path = "main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12" }
