@@ -2,12 +2,14 @@ use std::sync::atomic::{AtomicUsize, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::collections::BTreeMap;
 use xxhash_rust::xxh64::xxh64;
+use crate::health::{BackendHealth, HealthConfig};
 
 #[derive(Clone, Debug)]
 pub struct Backend {
     pub url: String,
     pub weight: u32,
     pub active_connections: Arc<AtomicUsize>,
+    pub health: Arc<BackendHealth>,
 }
 
 impl Backend {
@@ -16,6 +18,7 @@ impl Backend {
             url: url.to_string(),
             weight,
             active_connections: Arc::new(AtomicUsize::new(0)),
+            health: Arc::new(BackendHealth::new(HealthConfig::default())),
         }
     }
 }
@@ -58,10 +61,13 @@ impl LoadBalancer for WeightedRoundRobin {
         if self.backends.len() == 1 { return Some(self.backends[0].clone()); }
         
         let mut total_weight = 0;
-        let mut best_idx = 0;
+        let mut best_idx = None;
         let mut best_weight = i64::MIN;
 
         for (i, backend) in self.backends.iter().enumerate() {
+            if !backend.health.is_healthy() {
+                continue;
+            }
             let weight = backend.weight as i64;
             
             // Advance state (atomic cross-thread progress)
@@ -69,11 +75,12 @@ impl LoadBalancer for WeightedRoundRobin {
             total_weight += weight;
             
             if current > best_weight {
-                best_idx = i;
+                best_idx = Some(i);
                 best_weight = current;
             }
         }
         
+        let best_idx = best_idx?;
         // Decrease best by total_weight
         self.states[best_idx].fetch_sub(total_weight, Ordering::SeqCst);
         
@@ -107,6 +114,7 @@ impl LeastConnections {
 impl LoadBalancer for LeastConnections {
     fn next(&self, _ctx: &LoadBalancerContext) -> Option<Backend> {
         self.backends.iter()
+            .filter(|b| b.health.is_healthy())
             .min_by_key(|b| b.active_connections.load(Ordering::Relaxed))
             .cloned()
     }
@@ -166,18 +174,16 @@ impl LoadBalancer for ConsistentHash {
             None => return Some(self.backends[0].clone()), // Fallback
         };
 
-        // Find the first virtual node >= hash
-        let mut iter = self.ring.range(hash..);
-        let idx = match iter.next() {
-            Some((_, &idx)) => idx,
-            None => {
-                // Wrap around to the start of the ring
-                let (_, &idx) = self.ring.iter().next().unwrap();
-                idx
+        // Find the first virtual node >= hash, with fallback to start of ring
+        let iter = self.ring.range(hash..).chain(self.ring.iter());
+        for (_, &idx) in iter {
+            let backend = &self.backends[idx];
+            if backend.health.is_healthy() {
+                return Some(backend.clone());
             }
-        };
+        }
 
-        Some(self.backends[idx].clone())
+        None
     }
 
     fn add_backend(&mut self, backend: Backend) {
@@ -240,5 +246,51 @@ impl UpstreamGroup {
     
     pub fn backends(&self) -> Vec<Backend> {
         self.strategy.lock().unwrap().backends()
+    }
+
+    pub fn start_health_check(&self) {
+        let backends = self.backends();
+        tokio::spawn(async move {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(2)) // Must match config ideally
+                .build()
+                .unwrap();
+
+            loop {
+                for backend in &backends {
+                    // Only check if not draining
+                    if backend.health.is_draining() {
+                        continue;
+                    }
+
+                    let url = format!("{}{}", backend.url, backend.health.config.path);
+                    
+                    match client.get(&url).send().await {
+                        Ok(res) => {
+                            if res.status().is_server_error() {
+                                backend.health.record_failure();
+                            } else {
+                                backend.health.record_success();
+                            }
+                        }
+                        Err(_) => {
+                            backend.health.record_failure();
+                        }
+                    }
+                }
+                
+                // Active polling interval is assumed 10 seconds everywhere to simplify 
+                // in reality we'd take min over backend configs
+                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            }
+        });
+    }
+
+    pub fn drain_backend(&self, url: &str) {
+        let backends = self.backends();
+        if let Some(b) = backends.into_iter().find(|b| b.url == url) {
+            b.health.set_draining();
+            tracing::info!("Backend {} is now DRAINING", b.url);
+        }
     }
 }

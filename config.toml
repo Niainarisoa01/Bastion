@@ -1,0 +1,8 @@
+[server]
+listen = "127.0.0.1:8080"
+admin_listen = "127.0.0.1:8081"
+workers = 4
+
+[log]
+level = "info"
+format = "text"

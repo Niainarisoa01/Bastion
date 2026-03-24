@@ -33,9 +33,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 ipnet = { workspace = true }
 rand = { workspace = true }
+xxhash-rust = { workspace = true }
+reqwest = { workspace = true }
 
 [dev-dependencies]
-reqwest = { workspace = true }
 tokio-test = { workspace = true }
 chrono = { workspace = true }
 jsonwebtoken = { workspace = true }

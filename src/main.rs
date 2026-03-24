@@ -63,10 +63,13 @@ async fn main() -> Result<()> {
     let pool = bastion_core::pool::PoolManager::default();
     let mut router = bastion_core::router::RadixTrie::new();
     
-    // Upstream group with two backends
+    // Upstream group with 3 weighted backends
     let mut backend_group = bastion_core::loadbalancer::UpstreamGroup::new("test_group", vec![]);
-    backend_group.add_backend(bastion_core::loadbalancer::Backend::new("http://127.0.0.1:8001", 1));
+    backend_group.add_backend(bastion_core::loadbalancer::Backend::new("http://127.0.0.1:8001", 3));
     backend_group.add_backend(bastion_core::loadbalancer::Backend::new("http://127.0.0.1:8002", 1));
+    backend_group.add_backend(bastion_core::loadbalancer::Backend::new("http://127.0.0.1:8003", 1));
+    
+    backend_group.start_health_check();
     
     let methods = vec![];
     router.insert("/api/*any", methods.clone(), backend_group.clone(), None, None);
@@ -107,10 +110,10 @@ async fn main() -> Result<()> {
         }
     ));
 
-    // 5. Rate Limiter
+    // 5. Rate Limiter (Increased for LB tests)
     chain.add(bastion_core::middleware::RateLimiterMiddleware::new(
         bastion_core::middleware::RateLimitConfig {
-            limit: 5,
+            limit: 50000,
             window: std::time::Duration::from_secs(10),
             ..Default::default()
         }
@@ -119,7 +122,17 @@ async fn main() -> Result<()> {
     // 6. Logging
     chain.add(bastion_core::middleware::LogMiddleware::new());
 
-    let proxy = bastion_core::proxy::ProxyServer::new(pool, router, chain);
+    // 7. Caching
+    let cache = std::sync::Arc::new(bastion_cache::ShardedLruCache::new(8, 1000, 0));
+    chain.add(bastion_core::middleware::cache::CacheMiddleware::new(cache));
+
+    let metrics = std::sync::Arc::new(bastion_metrics::GatewayMetrics::default());
+    
+    // Inject metrics middleware into proxy chain
+    chain.add(bastion_core::middleware::metrics::MetricsMiddleware::new(metrics.clone()));
+
+    let shared_router = std::sync::Arc::new(std::sync::RwLock::new(router));
+    let proxy = bastion_core::proxy::ProxyServer::new(pool, shared_router.clone(), chain);
     
     let listen_addr = config.server.listen.parse().with_context(|| "Invalid listen address in config")?;
     tokio::spawn(async move {
@@ -129,7 +142,14 @@ async fn main() -> Result<()> {
         }
     });
 
-    // TODO: Init Admin Server, Telegram Bot, Metrics
+    let admin_listen = config.server.admin_listen;
+    tokio::spawn(async move {
+        if let Err(e) = bastion_admin::start_admin_server(admin_listen, metrics, shared_router).await {
+            tracing::error!("Admin server crashed: {}", e);
+        }
+    });
+
+    // TODO: Init Telegram Bot, Dashboard
     let _ = tokio::signal::ctrl_c().await;
     tracing::info!("Shutting down Bastion Gateway gracefully...");
 

@@ -13,10 +13,11 @@ use hyper::service::service_fn;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use async_trait::async_trait;
+use std::sync::RwLock; // Added for RwLock
 
 use crate::pool::PoolManager;
-use crate::router::RadixTrie;
-use crate::loadbalancer::UpstreamGroup;
+use crate::router::{RadixTrie, RouteMatch}; // Modified to include RouteMatch
+use crate::loadbalancer::{LoadBalancerContext, UpstreamGroup}; // Modified to include LoadBalancerContext
 use crate::middleware::{
     MiddlewareChain, RequestContext, Next, ProxyHandler, ProxyResponse,
 };
@@ -24,7 +25,7 @@ use crate::middleware::{
 #[derive(Clone)]
 pub struct ProxyServer {
     pool: PoolManager,
-    router: RadixTrie<UpstreamGroup>,
+    router: Arc<RwLock<RadixTrie<UpstreamGroup>>>, // Modified type
     chain: Arc<MiddlewareChain>,
 }
 
@@ -35,7 +36,7 @@ fn full_body<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
 }
 
 impl ProxyServer {
-    pub fn new(pool: PoolManager, router: RadixTrie<UpstreamGroup>, chain: MiddlewareChain) -> Self {
+    pub fn new(pool: PoolManager, router: Arc<RwLock<RadixTrie<UpstreamGroup>>>, chain: MiddlewareChain) -> Self { // Modified parameter type
         Self {
             pool,
             router,
@@ -102,7 +103,7 @@ impl ProxyServer {
 /// Terminal handler — the actual proxy logic that forwards to backends.
 struct ProxyTerminal {
     pool: PoolManager,
-    router: RadixTrie<UpstreamGroup>,
+    router: Arc<RwLock<RadixTrie<UpstreamGroup>>>,
 }
 
 #[async_trait]
@@ -116,7 +117,16 @@ impl ProxyHandler for ProxyTerminal {
         let method = req.method().clone();
 
         // 1. Router Lookup
-        let route_match = match self.router.lookup(&method, &path) {
+        let route_match_opt = {
+            let r = self.router.read().unwrap();
+            r.lookup(&method, &path).map(|m| RouteMatch {
+                value: m.value.clone(),
+                rewritten_path: m.rewritten_path.clone(),
+                params: m.params.clone(),
+            })
+        };
+
+        let route_match = match route_match_opt {
             Some(m) => m,
             None => {
                 let mut res = Response::new(full_body("404 Not Found - Bastion Gateway\n"));
@@ -183,11 +193,18 @@ impl ProxyHandler for ProxyTerminal {
 
         match proxy_result {
             Ok(res) => {
+                if res.status().is_server_error() {
+                    backend.health.record_failure();
+                } else {
+                    backend.health.record_success();
+                }
+
                 let (parts, body) = res.into_parts();
                 Ok(Response::from_parts(parts, body.boxed()))
             }
             Err(e) => {
                 tracing::error!("Backend {} failed: {}", backend.url, e);
+                backend.health.record_failure();
                 let mut res = Response::new(full_body("502 Bad Gateway - Backend connection failed\n"));
                 *res.status_mut() = StatusCode::BAD_GATEWAY;
                 Ok(res)

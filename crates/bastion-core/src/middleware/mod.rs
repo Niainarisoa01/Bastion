@@ -9,6 +9,7 @@ pub mod request_validation;
 pub mod circuit_breaker;
 pub mod retry;
 pub mod cache;
+pub mod metrics;
 
 pub use chain::{Middleware, MiddlewareChain, Next, ProxyHandler, ProxyResponse};
 pub use context::RequestContext;
