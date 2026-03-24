@@ -13,3 +13,11 @@ hyper = { workspace = true }
 bytes = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+xxhash-rust = { workspace = true }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "cache_bench"
+harness = false

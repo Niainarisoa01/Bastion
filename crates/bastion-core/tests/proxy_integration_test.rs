@@ -12,7 +12,7 @@ use bastion_core::pool::PoolManager;
 use bastion_core::router::RadixTrie;
 use bastion_core::loadbalancer::{Backend, UpstreamGroup};
 use bastion_core::proxy::ProxyServer;
-use bastion_core::middleware::{MiddlewareChain, LogMiddleware, RateLimiterMiddleware, RateLimitConfig};
+use bastion_core::middleware::{MiddlewareChain, LogMiddleware};
 
 /// Spawn a mock HTTP server returning a fixed body and status code.
 async fn spawn_mock_server(port: u16, response_body: &'static str, status: StatusCode) {

@@ -57,6 +57,12 @@ pub struct MiddlewareChain {
     pub(crate) middlewares: Vec<Arc<dyn Middleware>>,
 }
 
+impl Default for MiddlewareChain {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MiddlewareChain {
     pub fn new() -> Self {
         Self {

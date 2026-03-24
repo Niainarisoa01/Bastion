@@ -1,9 +1,8 @@
 use async_trait::async_trait;
-use hyper::{Request, Response, StatusCode, Method};
+use hyper::{Request, Response, StatusCode};
 use hyper::body::{Incoming, Bytes};
 use hyper::header::{HeaderValue, HeaderName};
 use http_body_util::{BodyExt, Full};
-use http_body_util::combinators::BoxBody;
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use serde::{Deserialize, Serialize};
 

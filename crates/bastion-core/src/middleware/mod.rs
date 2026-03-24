@@ -8,6 +8,7 @@ pub mod ip_filter;
 pub mod request_validation;
 pub mod circuit_breaker;
 pub mod retry;
+pub mod cache;
 
 pub use chain::{Middleware, MiddlewareChain, Next, ProxyHandler, ProxyResponse};
 pub use context::RequestContext;

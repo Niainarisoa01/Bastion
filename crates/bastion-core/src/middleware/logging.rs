@@ -10,6 +10,12 @@ use crate::middleware::context::RequestContext;
 /// Structured logging middleware. Logs method, URI, status, latency.
 pub struct LogMiddleware;
 
+impl Default for LogMiddleware {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LogMiddleware {
     pub fn new() -> Self {
         Self

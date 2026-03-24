@@ -95,7 +95,7 @@ impl SlidingWindow {
         let window_ms = self.window.as_millis() as u64;
         let cutoff = now.saturating_sub(window_ms);
 
-        let mut entry = self.entries.entry(key.to_string()).or_insert_with(Vec::new);
+        let mut entry = self.entries.entry(key.to_string()).or_default();
         let timestamps = entry.value_mut();
 
         // Evict expired entries

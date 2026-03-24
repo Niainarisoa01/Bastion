@@ -305,8 +305,7 @@ fn parse_path(path: &str) -> Vec<PathSegment<'_>> {
                     param_type: ParamType::Named(Arc::from(param_name)),
                 });
                 current_idx += end_offset;
-            } else if remaining.starts_with('*') {
-                let param_name = &remaining[1..];
+            } else if let Some(param_name) = remaining.strip_prefix('*') {
                 segments.push(PathSegment {
                     prefix: "",
                     param_type: ParamType::CatchAll(Arc::from(param_name)),

@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use hyper::{Request, Response, StatusCode};
 use hyper::body::{Incoming, Bytes};
 use http_body_util::{BodyExt, Full};
-use http_body_util::combinators::BoxBody;
 use std::net::IpAddr;
 use ipnet::IpNet;
 

@@ -8,9 +8,7 @@ use bastion_core::middleware::context::RequestContext;
 use async_trait::async_trait;
 use hyper::{Request, Response, StatusCode, Method};
 use hyper::body::{Incoming, Bytes};
-use hyper::header::HeaderValue;
-use http_body_util::{BodyExt, Full, Empty};
-use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, Full};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,7 +16,7 @@ use tokio::net::TcpListener;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
-use jsonwebtoken::{encode, EncodingKey, Header, Algorithm};
+use jsonwebtoken::{encode, EncodingKey, Header};
 
 // ── Mock terminal handler ──────────────────────
 
@@ -91,12 +89,12 @@ async fn spawn_middleware_test_server<M: Middleware + 'static>(
             if let Ok((stream, _)) = listener.accept().await {
                 let io = TokioIo::new(stream);
                 let mw = Arc::clone(&mw);
-                let ip = ip.clone();
+                let ip = ip;
                 tokio::spawn(async move {
                     let _ = http1::Builder::new()
                         .serve_connection(io, service_fn(move |req: Request<Incoming>| {
                             let mw = Arc::clone(&mw);
-                            let ip = ip.clone();
+                            let ip = ip;
                             async move {
                                 let ctx = RequestContext::new("test-id".to_string(), ip);
                                 let handler = MockHandler;
