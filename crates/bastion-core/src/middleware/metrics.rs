@@ -40,15 +40,13 @@ impl Middleware for MetricsMiddleware {
         self.metrics.active_requests.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
 
         let is_error = match &res {
-            Ok(response) => response.status().is_server_error() || response.status().is_client_error(),
+            Ok(response) => response.status().is_server_error(),
             Err(_) => true,
         };
 
-        // Note: The backend url is retrieved from loadbalancer, which happens at ProxyTerminal (after middlewares).
-        // Since Middlewares can't natively see what backend was selected inside `next.run()`,
-        // We'll skip backend_url tracking here and let ProxyTerminal or another mechanism do it, 
-        // or we track it per-route for now.
-        self.metrics.record_request(&path, None, latency_us, is_error);
+        // Read backend URL from context metadata (set by ProxyTerminal after load balancing)
+        let backend_url = ctx.metadata.get("backend_url").map(|v| v.clone());
+        self.metrics.record_request(&path, backend_url.as_deref(), latency_us, is_error);
 
         res
     }

@@ -64,10 +64,32 @@ async fn main() -> Result<()> {
     let mut router = bastion_core::router::RadixTrie::new();
     
     // Upstream group with 3 weighted backends
+    let health_cfg = bastion_core::health::HealthConfig {
+        path: "/api".to_string(),
+        ..Default::default()
+    };
     let mut backend_group = bastion_core::loadbalancer::UpstreamGroup::new("test_group", vec![]);
-    backend_group.add_backend(bastion_core::loadbalancer::Backend::new("http://127.0.0.1:8001", 3));
-    backend_group.add_backend(bastion_core::loadbalancer::Backend::new("http://127.0.0.1:8002", 1));
-    backend_group.add_backend(bastion_core::loadbalancer::Backend::new("http://127.0.0.1:8003", 1));
+    let b1 = bastion_core::loadbalancer::Backend {
+        url: "http://127.0.0.1:8001".to_string(),
+        weight: 3,
+        active_connections: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        health: std::sync::Arc::new(bastion_core::health::BackendHealth::new(health_cfg.clone())),
+    };
+    let b2 = bastion_core::loadbalancer::Backend {
+        url: "http://127.0.0.1:8002".to_string(),
+        weight: 1,
+        active_connections: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        health: std::sync::Arc::new(bastion_core::health::BackendHealth::new(health_cfg.clone())),
+    };
+    let b3 = bastion_core::loadbalancer::Backend {
+        url: "http://127.0.0.1:8003".to_string(),
+        weight: 1,
+        active_connections: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        health: std::sync::Arc::new(bastion_core::health::BackendHealth::new(health_cfg)),
+    };
+    backend_group.add_backend(b1);
+    backend_group.add_backend(b2);
+    backend_group.add_backend(b3);
     
     backend_group.start_health_check();
     
@@ -97,7 +119,7 @@ async fn main() -> Result<()> {
     chain.add(bastion_core::middleware::JwtMiddleware::new(
         bastion_core::middleware::JwtConfig {
             secret: bastion_core::middleware::JwtSecret::Hmac("bastion-test-secret".to_string()),
-            skip_paths: vec!["/public".to_string()],
+            skip_paths: vec!["/public".to_string(), "/api".to_string()],
             ..Default::default()
         }
     ));
@@ -132,8 +154,16 @@ async fn main() -> Result<()> {
     chain.add(bastion_core::middleware::metrics::MetricsMiddleware::new(metrics.clone()));
 
     let shared_router = std::sync::Arc::new(std::sync::RwLock::new(router));
-    let proxy = bastion_core::proxy::ProxyServer::new(pool, shared_router.clone(), chain);
     
+    // Hot-reload setup
+    let config_watcher = bastion_config::ConfigWatcher::new(&args.config, config.clone());
+    config_watcher.start_watching(|new_cfg| {
+        tracing::info!("Bastion Main: Received hot-reload event (config revision loaded)");
+        // TODO: Map `new_cfg.routes` into `shared_router.write()` down the line.
+    });
+
+    let proxy = bastion_core::proxy::ProxyServer::new(pool, shared_router.clone(), chain);
+
     let listen_addr = config.server.listen.parse().with_context(|| "Invalid listen address in config")?;
     tokio::spawn(async move {
         tracing::info!("Starting ProxyServer on {}...", listen_addr);
@@ -142,14 +172,28 @@ async fn main() -> Result<()> {
         }
     });
 
-    let admin_listen = config.server.admin_listen;
+    let admin_listen = config.server.admin_listen.clone();
+    let metrics_for_admin = metrics.clone();
+    let router_for_admin = shared_router.clone();
     tokio::spawn(async move {
-        if let Err(e) = bastion_admin::start_admin_server(admin_listen, metrics, shared_router).await {
+        if let Err(e) = bastion_admin::start_admin_server(admin_listen, metrics_for_admin, router_for_admin).await {
             tracing::error!("Admin server crashed: {}", e);
         }
     });
 
-    // TODO: Init Telegram Bot, Dashboard
+    if config.telegram.enabled && !config.telegram.token.is_empty() {
+        let tg_ctx = bastion_telegram::BotContext {
+            metrics: metrics.clone(),
+            router: shared_router.clone(),
+            admin_chat_ids: config.telegram.admin_chat_ids.clone(),
+        };
+        let token = config.telegram.token.clone();
+        tokio::spawn(async move {
+            bastion_telegram::start_telegram_bot(token, tg_ctx).await;
+        });
+    }
+
+    // Await termination (Ctrl+C)
     let _ = tokio::signal::ctrl_c().await;
     tracing::info!("Shutting down Bastion Gateway gracefully...");
 

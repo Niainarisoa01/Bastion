@@ -117,17 +117,18 @@ impl ProxyHandler for ProxyTerminal {
         let method = req.method().clone();
 
         // 1. Router Lookup
-        let route_match_opt = {
+        let lookup_result = {
             let r = self.router.read().unwrap();
-            r.lookup(&method, &path).map(|m| RouteMatch {
-                value: m.value.clone(),
-                rewritten_path: m.rewritten_path.clone(),
-                params: m.params.clone(),
-            })
+            let x = if let Some(m) = r.lookup(&method, &path) {
+                Some((m.value.clone(), m.rewritten_path.clone()))
+            } else {
+                None
+            };
+            x
         };
 
-        let route_match = match route_match_opt {
-            Some(m) => m,
+        let (upstream_group, rewritten_path) = match lookup_result {
+            Some(res) => res,
             None => {
                 let mut res = Response::new(full_body("404 Not Found - Bastion Gateway\n"));
                 *res.status_mut() = StatusCode::NOT_FOUND;
@@ -136,7 +137,6 @@ impl ProxyHandler for ProxyTerminal {
         };
 
         // 2. Load Balancing (Round Robin)
-        let upstream_group = route_match.value;
         let backend = match upstream_group.next() {
             Some(b) => b,
             None => {
@@ -148,6 +148,9 @@ impl ProxyHandler for ProxyTerminal {
 
         // Track active connection
         backend.active_connections.fetch_add(1, Ordering::SeqCst);
+
+        // Store backend URL in context for MetricsMiddleware
+        ctx.metadata.insert("backend_url".to_string(), backend.url.clone());
 
         // 3. Header Manipulation
         let headers = req.headers_mut();
@@ -175,7 +178,7 @@ impl ProxyHandler for ProxyTerminal {
         parts.scheme = backend_uri_parsed.scheme().cloned();
         parts.authority = backend_uri_parsed.authority().cloned();
 
-        if let Some(ref rewritten) = route_match.rewritten_path {
+        if let Some(ref rewritten) = rewritten_path {
             let new_path_and_query = match req.uri().query() {
                 Some(q) => format!("{}?{}", rewritten, q),
                 None => rewritten.clone(),

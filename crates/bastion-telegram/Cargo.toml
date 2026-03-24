@@ -13,3 +13,4 @@ tracing = { workspace = true }
 dashmap = { workspace = true }
 bastion-config = { workspace = true }
 bastion-metrics = { workspace = true }
+bastion-core = { workspace = true }

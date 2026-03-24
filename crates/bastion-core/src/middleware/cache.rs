@@ -54,18 +54,27 @@ impl Middleware for CacheMiddleware {
         // Cache Key Generation
         let key = Self::generate_key(&req);
 
-        // Check Cache HIT
-        if let Some(cached_body) = self.cache.get(&key) {
-            let mut res = Response::new(
-                Full::new(cached_body)
-                    .map_err(|never| match never {})
-                    .boxed(),
-            );
-            res.headers_mut().insert(
-                "X-Cache",
-                HeaderValue::from_static("HIT"),
-            );
-            return Ok(res);
+        // Respect Cache-Control: no-cache
+        let skip_cache = req.headers()
+            .get("Cache-Control")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.contains("no-cache") || v.contains("no-store"))
+            .unwrap_or(false);
+
+        // Check Cache HIT (only if not bypassed)
+        if !skip_cache {
+            if let Some(cached_body) = self.cache.get(&key) {
+                let mut res = Response::new(
+                    Full::new(cached_body)
+                        .map_err(|never| match never {})
+                        .boxed(),
+                );
+                res.headers_mut().insert(
+                    "X-Cache",
+                    HeaderValue::from_static("HIT"),
+                );
+                return Ok(res);
+            }
         }
 
         // Cache MISS: forward the request

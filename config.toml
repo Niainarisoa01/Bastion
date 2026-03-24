@@ -3,6 +3,11 @@ listen = "127.0.0.1:8080"
 admin_listen = "127.0.0.1:8081"
 workers = 4
 
-[log]
+[logging]
 level = "info"
-format = "text"
+format = "pretty"
+
+[telegram]
+enabled = true
+token = "8797117531:AAHjBPTLNtwvk2KBd2d5dy8w6_mCGyR7LrI"
+admin_chat_ids = []  # Vide pour l'instant afin que vous puissiez tester !

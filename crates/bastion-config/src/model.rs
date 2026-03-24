@@ -8,9 +8,15 @@ pub struct GatewayConfig {
     #[serde(default)]
     pub logging: LoggingConfig,
     
-    // Add other fields below as they are implemented
-    // pub routes: Vec<RouteConfig>,
-    // pub upstreams: Vec<UpstreamConfig>,
+    #[serde(default)]
+    pub telegram: TelegramConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct TelegramConfig {
+    pub enabled: bool,
+    pub token: String,
+    pub admin_chat_ids: Vec<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
