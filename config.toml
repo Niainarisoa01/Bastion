@@ -9,5 +9,6 @@ format = "pretty"
 
 [telegram]
 enabled = true
-token = "8797117531:AAHjBPTLNtwvk2KBd2d5dy8w6_mCGyR7LrI"
+# REMPLACER PAR VOTRE TOKEN ICI OU DANS config.local.toml
+token = "VOTRE_TOKEN_TELEGRAM_ICI"
 admin_chat_ids = []  # Vide pour l'instant afin que vous puissiez tester !
