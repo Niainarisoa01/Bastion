@@ -59,9 +59,77 @@ async fn main() -> Result<()> {
     tracing::info!("Server listening on {}", config.server.listen);
     tracing::info!("Admin API listening on {}", config.server.admin_listen);
 
-    // TODO: Init core gateway loops (HTTP Server, Admin Server, Telegram Bot, Metrics)
+    // 4. Start Core Proxy Engine
+    let pool = bastion_core::pool::PoolManager::default();
+    let mut router = bastion_core::router::RadixTrie::new();
     
-    // Park the main thread for now to keep the binary alive
+    // Upstream group with two backends
+    let mut backend_group = bastion_core::loadbalancer::UpstreamGroup::new("test_group", vec![]);
+    backend_group.add_backend(bastion_core::loadbalancer::Backend::new("http://127.0.0.1:8001", 1));
+    backend_group.add_backend(bastion_core::loadbalancer::Backend::new("http://127.0.0.1:8002", 1));
+    
+    let methods = vec![];
+    router.insert("/api/*any", methods.clone(), backend_group.clone(), None, None);
+    router.insert("/api", methods.clone(), backend_group.clone(), None, None);
+    router.insert("/public/*any", methods.clone(), backend_group.clone(), None, None);
+    router.insert("/public", methods, backend_group.clone(), None, None);
+
+    // Build middleware chain
+    let mut chain = bastion_core::middleware::MiddlewareChain::new();
+    
+    // 1. IP Filter (Whitelist localhost)
+    chain.add(bastion_core::middleware::IpFilterMiddleware::new(
+        bastion_core::middleware::IpFilterConfig {
+            mode: bastion_core::middleware::IpFilterMode::Whitelist,
+            rules: vec!["127.0.0.0/8".to_string(), "::1".to_string()],
+        }
+    ));
+
+    // 2. CORS
+    chain.add(bastion_core::middleware::CorsMiddleware::new(
+        bastion_core::middleware::CorsConfig::default()
+    ));
+
+    // 3. JWT Auth
+    chain.add(bastion_core::middleware::JwtMiddleware::new(
+        bastion_core::middleware::JwtConfig {
+            secret: bastion_core::middleware::JwtSecret::Hmac("bastion-test-secret".to_string()),
+            skip_paths: vec!["/public".to_string()],
+            ..Default::default()
+        }
+    ));
+
+    // 4. Request Validation (Max 1MB body)
+    chain.add(bastion_core::middleware::RequestValidationMiddleware::new(
+        bastion_core::middleware::RequestValidationConfig {
+            max_body_size: Some(1024 * 1024),
+            required_content_types: vec![],
+        }
+    ));
+
+    // 5. Rate Limiter
+    chain.add(bastion_core::middleware::RateLimiterMiddleware::new(
+        bastion_core::middleware::RateLimitConfig {
+            limit: 5,
+            window: std::time::Duration::from_secs(10),
+            ..Default::default()
+        }
+    ));
+
+    // 6. Logging
+    chain.add(bastion_core::middleware::LogMiddleware::new());
+
+    let proxy = bastion_core::proxy::ProxyServer::new(pool, router, chain);
+    
+    let listen_addr = config.server.listen.parse().with_context(|| "Invalid listen address in config")?;
+    tokio::spawn(async move {
+        tracing::info!("Starting ProxyServer on {}...", listen_addr);
+        if let Err(e) = proxy.start(listen_addr).await {
+            tracing::error!("Proxy server crashed: {}", e);
+        }
+    });
+
+    // TODO: Init Admin Server, Telegram Bot, Metrics
     let _ = tokio::signal::ctrl_c().await;
     tracing::info!("Shutting down Bastion Gateway gracefully...");
 

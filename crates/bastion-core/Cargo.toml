@@ -9,7 +9,7 @@ description = "Core proxy engine for Bastion Gateway"
 [dependencies]
 tokio = { workspace = true }
 hyper = { workspace = true }
-hyper-util = { workspace = true }
+hyper-util = { workspace = true, features = ["client", "client-legacy", "http1", "http2", "server-auto", "tokio"] }
 http-body-util = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
@@ -27,3 +27,15 @@ tower-http = { workspace = true }
 bastion-cache = { workspace = true }
 bastion-metrics = { workspace = true }
 bastion-config = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+jsonwebtoken = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ipnet = { workspace = true }
+rand = { workspace = true }
+
+[dev-dependencies]
+reqwest = { workspace = true }
+tokio-test = { workspace = true }
+chrono = { workspace = true }
+jsonwebtoken = { workspace = true }

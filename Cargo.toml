@@ -74,9 +74,11 @@ clap = { version = "4", features = ["derive"] }
 xxhash-rust = { version = "0.8", features = ["xxh64"] }
 jsonwebtoken = "9"
 bytes = "1"
+ipnet = "2"
 pin-project-lite = "0.2"
 tower = { version = "0.5", features = ["full"] }
 tower-http = { version = "0.6", features = ["full"] }
+rand = "0.8"
 
 # Workspace crates
 bastion-core = { path = "crates/bastion-core" }

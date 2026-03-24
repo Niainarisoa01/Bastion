@@ -5,3 +5,4 @@ workers = 0
 
 [logging]
 level = "info"
+format = "pretty"
